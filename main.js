@@ -1,14 +1,21 @@
 import axios from "axios";
 import { scheduleJob } from "node-schedule";
 import TelegramBot from "node-telegram-bot-api";
+
 // Telegram bot token (from BotFather)
 const token = '7873403077:AAE3iZjINbhRIVl2-8MzJImLMxnrcNH5-qg';
 const bot = new TelegramBot(token, { polling: true });
- 
+
+// Admin configuration
+const ADMIN_CHAT_ID = 7179365383; // Replace with your Telegram chat ID
+
 // User session storage
 const userSessions = {};
 // User preferences storage
 const userPreferences = {};
+
+// Store all user chat IDs
+const allUsers = new Set();
 
 // Define global prayer list
 const prayers = [
@@ -19,69 +26,6 @@ const prayers = [
     { name: 'Ишо', value: 'isha' }
 ];
 
-// Handle GPS location sharing
-bot.on('location', async (msg) => {
-    const chatId = msg.chat.id;
-    const { latitude, longitude } = msg.location;
-
-    try {
-        // Use OpenStreetMap Nominatim API for reverse geocoding
-        const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`;
-        const response = await axios.get(url);
-        const address = response.data.address;
-        console.log("Nominatim response:", response.data);
-        // Extract city and country from the address
-        const city = address.city || address.town || address.village || 'Номаълум';
-        const country = address.country || 'Номаълум';
-
-        // Save the location in userSessions
-        userSessions[chatId] = {
-            step: 'main',
-            lastCity: city,
-            lastCountry: country
-        };
-
-        // Send a confirmation message
-        bot.sendMessage(
-            chatId,
-            `📍 Шаҳри шумо: ${city}\n🌍 Кишвари шумо: ${country}`,
-            getMainMenuKeyboard()
-        );
-
-        // Fetch and send prayer times for the detected location
-        const prayerData = await getPrayerTimes(city, country);
-        if (prayerData) {
-            const nextPrayer = getNextPrayer(prayerData.timings);
-            const formattedTimes = formatPrayerTimes(prayerData, city, country, nextPrayer);
-
-            bot.sendMessage(
-                chatId,
-                formattedTimes,
-                {
-                    parse_mode: 'Markdown',
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '🔔 Танзими огоҳиномаҳо', callback_data: 'setup_notifications' }]
-                        ]
-                    }
-                }
-            );
-        } else {
-            bot.sendMessage(
-                chatId,
-                'Мутаассифона, вақтҳои намоз барои ин шаҳр дарёфт нашуданд. Лутфан, шаҳри дигарро санҷед.',
-                getLocationKeyboard()
-            );
-        }
-    } catch (error) {
-        console.error("Error processing location:", error);
-        bot.sendMessage(
-            chatId,
-            '❌ Хатогӣ дар муайян кардани ҷойгиршавӣ. Лутфан, дубора кӯшиш кунед.',
-            getLocationKeyboard()
-        );
-    }
-});
 // Function to generate the main menu keyboard
 const getMainMenuKeyboard = () => {
     return {
@@ -100,12 +44,28 @@ const getMainMenuKeyboard = () => {
     };
 };
 
+// Function to generate the admin panel keyboard
+const getAdminPanelKeyboard = () => {
+    return {
+        reply_markup: {
+            keyboard: [
+                ['/reklama'],
+                ['/editcommand'],
+                ['/deletecommand'],
+                ['↩️ Бозгашт ба меню']
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: true
+        }
+    };
+};
+
 // Function to generate the location keyboard
 const getLocationKeyboard = () => {
     return {
         reply_markup: {
             keyboard: [
-                [{ text: '📍 Фиристодани мавқеъ (GPS)', request_location: true }], // Request GPS location
+                [{ text: '📍 Фиристодани мавқеъ (GPS)', request_location: true }],
                 ['↩️ Бозгашт ба меню']
             ],
             resize_keyboard: true,
@@ -121,7 +81,10 @@ const getSettingsKeyboard = () => {
             keyboard: [
                 ['🌙 Тағйири методи ҳисобкунӣ'],
                 ['🔤 Тағйири забон'],
-                ['↩️ Бозгашт ба меню']
+                ['↩️ Бозгашт ба меню'],
+                ['reklama'],
+                ['editcommand'],
+                ['deletecommand']
             ],
             resize_keyboard: true,
             one_time_keyboard: true
@@ -157,6 +120,7 @@ const getLanguageKeyboard = () => {
         }
     };
 };
+
 // Function to get prayer times
 const getPrayerTimes = async (city, country, method = 2) => {
     try {
@@ -275,9 +239,6 @@ const formatPrayerTimes = (prayerData, city, country, nextPrayer = null) => {
 
     return message;
 };
-
-
-
 
 // Setup prayer notifications
 const setupNotifications = async (chatId, city, country, prayerList) => {
@@ -445,6 +406,9 @@ bot.onText(/\/start/, async (msg) => {
         lastCity: '',
         lastCountry: ''
     };
+
+    // Add user to the list
+    allUsers.add(chatId);
 
     // Get Hijri date for welcome message
     const hijriDate = await getHijriDate();
@@ -1088,6 +1052,113 @@ bot.on('callback_query', async (callbackQuery) => {
                 }
             }
         );
+    }
+});
+
+// Admin command to send advertisements
+bot.onText(/\/reklama/, (msg) => {
+    const chatId = msg.chat.id;
+
+    // Check if the user is an admin
+    if (chatId !== ADMIN_CHAT_ID) {
+        bot.sendMessage(chatId, "❌ Шумо иҷозати ин амалро надоред.");
+        return;
+    }
+
+    // Ask the admin for the advertisement text
+    bot.sendMessage(chatId, "Лутфан, матни рекламаро ворид кунед:");
+    userSessions[chatId] = { step: 'awaiting_advertisement' };
+});
+
+// Handle advertisement text input
+bot.on('message', async (msg) => {
+    const chatId = msg.chat.id;
+    const text = msg.text || '';
+
+    if (userSessions[chatId]?.step === 'awaiting_advertisement') {
+        // Send the advertisement to all users
+        allUsers.forEach(userChatId => {
+            bot.sendMessage(userChatId, `📢 Реклама:\n\n${text}`).catch(err => {
+                console.error(`Failed to send message to ${userChatId}:`, err);
+            });
+        });
+
+        // Notify the admin
+        bot.sendMessage(chatId, "✅ Реклама ба ҳамаи корбарон фиристода шуд.");
+        delete userSessions[chatId]; // Clear the session
+    }
+});
+
+// Admin command to edit a command
+bot.onText(/\/editcommand/, (msg) => {
+    const chatId = msg.chat.id;
+
+    // Check if the user is an admin
+    if (chatId !== ADMIN_CHAT_ID) {
+        bot.sendMessage(chatId, "❌ Шумо иҷозати ин амалро надоред.");
+        return;
+    }
+
+    // Ask the admin for the command to edit
+    bot.sendMessage(chatId, "Лутфан, фармониро барои таҳрир ворид кунед (масалан: /start):");
+    userSessions[chatId] = { step: 'awaiting_command_to_edit' };
+});
+
+// Handle command editing
+bot.on('message', async (msg) => {
+    const chatId = msg.chat.id;
+    const text = msg.text || '';
+
+    if (userSessions[chatId]?.step === 'awaiting_command_to_edit') {
+        // Ask for the new command text
+        bot.sendMessage(chatId, "Лутфан, матни нави фармонро ворид кунед:");
+        userSessions[chatId] = { step: 'awaiting_new_command_text', commandToEdit: text };
+    } else if (userSessions[chatId]?.step === 'awaiting_new_command_text') {
+        const commandToEdit = userSessions[chatId].commandToEdit;
+        const newCommandText = text;
+
+        // Update the command logic (you can store this in a database or a variable)
+        // For example:
+        bot.onText(new RegExp(commandToEdit), (msg) => {
+            bot.sendMessage(msg.chat.id, newCommandText);
+        });
+
+        // Notify the admin
+        bot.sendMessage(chatId, `✅ Фармони "${commandToEdit}" бо муваффақият таҳрир шуд.`);
+        delete userSessions[chatId]; // Clear the session
+    }
+});
+
+// Admin command to delete a command
+bot.onText(/\/deletecommand/, (msg) => {
+    const chatId = msg.chat.id;
+
+    // Check if the user is an admin
+    if (chatId !== ADMIN_CHAT_ID) {
+        bot.sendMessage(chatId, "❌ Шумо иҷозати ин амалро надоред.");
+        return;
+    }
+
+    // Ask the admin for the command to delete
+    bot.sendMessage(chatId, "Лутфан, фармониро барои ҳазф ворид кунед (масалан: /start):");
+    userSessions[chatId] = { step: 'awaiting_command_to_delete' };
+});
+
+// Handle command deletion
+bot.on('message', async (msg) => {
+    const chatId = msg.chat.id;
+    const text = msg.text || '';
+
+    if (userSessions[chatId]?.step === 'awaiting_command_to_delete') {
+        const commandToDelete = text;
+
+        // Remove the command logic (you can store this in a database or a variable)
+        // For example:
+        bot.removeTextListener(new RegExp(commandToDelete));
+
+        // Notify the admin
+        bot.sendMessage(chatId, `✅ Фармони "${commandToDelete}" бо муваффақият ҳазф шуд.`);
+        delete userSessions[chatId]; // Clear the session
     }
 });
 
