@@ -44,7 +44,7 @@ const getMainMenuKeyboard = () => {
     };
 };
 
-// Function to generate the admin panel keyboard// Function to generate the admin panel keyboard
+// Function to generate the admin panel keyboard
 const getAdminPanelKeyboard = () => {
     return {
         reply_markup: {
