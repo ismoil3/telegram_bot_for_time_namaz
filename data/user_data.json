@@ -1,0 +1,50 @@
+{
+  "12345": {
+    "settings": {
+      "city": "Test City",
+      "country": "Test Country",
+      "latitude": 51.5074,
+      "longitude": -0.1278,
+      "method": 2,
+      "language": "en",
+      "timeFormat": "24h",
+      "notifications": [],
+      "notificationTime": 15,
+      "activeJobs": {}
+    },
+    "lastActivity": 1741429560898,
+    "favorites": []
+  },
+  "7179365383": {
+    "settings": {
+      "city": "Dushanbe",
+      "country": "Tajikistan",
+      "latitude": 38.534702,
+      "longitude": 68.77782,
+      "method": 2,
+      "language": "ru",
+      "timeFormat": "24h",
+      "notifications": [],
+      "notificationTime": 15,
+      "activeJobs": {}
+    },
+    "lastActivity": 1741430181320,
+    "favorites": []
+  },
+  "undefined": {
+    "settings": {
+      "city": "",
+      "country": "",
+      "latitude": null,
+      "longitude": null,
+      "method": 2,
+      "language": "ru",
+      "timeFormat": "24h",
+      "notifications": [],
+      "notificationTime": 15,
+      "activeJobs": {}
+    },
+    "lastActivity": 1741430056266,
+    "favorites": []
+  }
+}
