@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "main": "main.js",
   "scripts": {
-    "start": "node main.js"
+    "start": "node main.js",
+    "build": "node build.js",
+    "vercel-build": "npm run build"
   },
   "keywords": [],
   "author": "",
@@ -11,6 +13,7 @@
   "description": "",
   "type": "module",
   "dependencies": {
+    "axios": "^1.8.2",
     "node-fetch": "^3.3.2",
     "node-schedule": "^2.1.1",
     "node-telegram-bot-api": "^0.66.0"

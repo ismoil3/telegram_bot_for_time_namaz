@@ -1,11 +1,10 @@
-import TelegramBot from 'node-telegram-bot-api';
-import fetch from 'node-fetch';
-import { scheduleJob } from 'node-schedule';
-
+import axios from "axios";
+import { scheduleJob } from "node-schedule";
+import TelegramBot from "node-telegram-bot-api";
 // Telegram bot token (from BotFather)
 const token = '7873403077:AAE3iZjINbhRIVl2-8MzJImLMxnrcNH5-qg';
 const bot = new TelegramBot(token, { polling: true });
-
+ 
 // User session storage
 const userSessions = {};
 // User preferences storage
@@ -20,12 +19,150 @@ const prayers = [
     { name: 'Ишо', value: 'isha' }
 ];
 
+// Handle GPS location sharing
+bot.on('location', async (msg) => {
+    const chatId = msg.chat.id;
+    const { latitude, longitude } = msg.location;
+
+    try {
+        // Use OpenStreetMap Nominatim API for reverse geocoding
+        const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`;
+        const response = await axios.get(url);
+        const address = response.data.address;
+        console.log("Nominatim response:", response.data);
+        // Extract city and country from the address
+        const city = address.city || address.town || address.village || 'Номаълум';
+        const country = address.country || 'Номаълум';
+
+        // Save the location in userSessions
+        userSessions[chatId] = {
+            step: 'main',
+            lastCity: city,
+            lastCountry: country
+        };
+
+        // Send a confirmation message
+        bot.sendMessage(
+            chatId,
+            `📍 Шаҳри шумо: ${city}\n🌍 Кишвари шумо: ${country}`,
+            getMainMenuKeyboard()
+        );
+
+        // Fetch and send prayer times for the detected location
+        const prayerData = await getPrayerTimes(city, country);
+        if (prayerData) {
+            const nextPrayer = getNextPrayer(prayerData.timings);
+            const formattedTimes = formatPrayerTimes(prayerData, city, country, nextPrayer);
+
+            bot.sendMessage(
+                chatId,
+                formattedTimes,
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🔔 Танзими огоҳиномаҳо', callback_data: 'setup_notifications' }]
+                        ]
+                    }
+                }
+            );
+        } else {
+            bot.sendMessage(
+                chatId,
+                'Мутаассифона, вақтҳои намоз барои ин шаҳр дарёфт нашуданд. Лутфан, шаҳри дигарро санҷед.',
+                getLocationKeyboard()
+            );
+        }
+    } catch (error) {
+        console.error("Error processing location:", error);
+        bot.sendMessage(
+            chatId,
+            '❌ Хатогӣ дар муайян кардани ҷойгиршавӣ. Лутфан, дубора кӯшиш кунед.',
+            getLocationKeyboard()
+        );
+    }
+});
+// Function to generate the main menu keyboard
+const getMainMenuKeyboard = () => {
+    return {
+        reply_markup: {
+            keyboard: [
+                ['🕌 Вақти намоз'],
+                ['🔔 Огоҳинома'],
+                ['📅 Тақвими моҳи ҷорӣ'],
+                ['🧭 Самти қибла'],
+                ['⚙️ Танзимот'],
+                ['❓ Маълумот']
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: true
+        }
+    };
+};
+
+// Function to generate the location keyboard
+const getLocationKeyboard = () => {
+    return {
+        reply_markup: {
+            keyboard: [
+                [{ text: '📍 Фиристодани мавқеъ (GPS)', request_location: true }], // Request GPS location
+                ['↩️ Бозгашт ба меню']
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: true
+        }
+    };
+};
+
+// Function to generate the settings keyboard
+const getSettingsKeyboard = () => {
+    return {
+        reply_markup: {
+            keyboard: [
+                ['🌙 Тағйири методи ҳисобкунӣ'],
+                ['🔤 Тағйири забон'],
+                ['↩️ Бозгашт ба меню']
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: true
+        }
+    };
+};
+
+// Function to generate the calculation method keyboard
+const getCalculationMethodKeyboard = () => {
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: 'Методи Исломӣ (UM)', callback_data: 'method_1' }],
+                [{ text: 'Методи Муслимони Амрико (ISNA)', callback_data: 'method_2' }],
+                [{ text: 'Методи Маркази исломии Фаронса (MWL)', callback_data: 'method_3' }],
+                [{ text: 'Методи Уммул-Куро (Макка)', callback_data: 'method_4' }],
+                [{ text: 'Методи Маркази исломии Миср (Egypt)', callback_data: 'method_5' }]
+            ]
+        }
+    };
+};
+
+// Function to generate the language selection keyboard
+const getLanguageKeyboard = () => {
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: 'Тоҷикӣ', callback_data: 'lang_tj' }],
+                [{ text: 'Русский', callback_data: 'lang_ru' }],
+                [{ text: 'O\'zbekcha', callback_data: 'lang_uz' }],
+                [{ text: 'English', callback_data: 'lang_en' }]
+            ]
+        }
+    };
+};
 // Function to get prayer times
 const getPrayerTimes = async (city, country, method = 2) => {
     try {
         const url = `https://api.aladhan.com/v1/timingsByCity?city=${encodeURIComponent(city)}&country=${encodeURIComponent(country)}&method=${method}`;
-        const response = await fetch(url);
-        const data = await response.json();
+        const response = await axios.get(url);
+        const data = response.data;
 
         if (data.code === 200) {
             return {
@@ -43,89 +180,30 @@ const getPrayerTimes = async (city, country, method = 2) => {
     }
 };
 
-// Create keyboard with common cities
-const getLocationKeyboard = () => {
-    return {
-        reply_markup: {
-            keyboard: [
-                ['Душанбе, Тоҷикистон'],
-                ['Вахдат, Тоҷикистон'],
-                ['Москва, Россия'],
-                ['Тошканд, Ўзбекистон'],
-                ['Хуҷанд, Тоҷикистон'],
-                ['Истанбул, Туркия'],
-                ['Дубай, АМА']
-            ],
-            resize_keyboard: true,
-            one_time_keyboard: false
+// Function to get Qibla direction
+const getQiblaDirection = async (city, country) => {
+    try {
+        const url = `https://api.aladhan.com/v1/qibla/${encodeURIComponent(city)}/${encodeURIComponent(country)}`;
+        const response = await axios.get(url);
+        const data = response.data;
+
+        if (data.code === 200) {
+            return {
+                direction: data.data.direction,
+                latitude: data.data.latitude,
+                longitude: data.data.longitude
+            };
+        } else {
+            console.error("API Error:", data);
+            return null;
         }
-    };
+    } catch (error) {
+        console.error("Error fetching qibla direction:", error);
+        return null;
+    }
 };
 
-// Create menu keyboard
-const getMainMenuKeyboard = () => {
-    return {
-        reply_markup: {
-            keyboard: [
-                ['🕌 Вақти намоз', '🔔 Огоҳинома'],
-                ['📅 Тақвими моҳи ҷорӣ', '🧭 Самти қибла'],
-                ['⚙️ Танзимот', '❓ Маълумот']
-            ],
-            resize_keyboard: true
-        }
-    };
-};
-
-// Create settings keyboard
-const getSettingsKeyboard = () => {
-    return {
-        reply_markup: {
-            keyboard: [
-                ['🔄 Тағйири шаҳр', '🌙 Тағйири методи ҳисобкунӣ'],
-                ['⏰ Танзими огоҳиномаҳо', '🔤 Тағйири забон'],
-                ['↩️ Бозгашт ба меню']
-            ],
-            resize_keyboard: true
-        }
-    };
-};
-
-// Create calculation method keyboard
-const getCalculationMethodKeyboard = () => {
-    return {
-        reply_markup: {
-            inline_keyboard: [
-                [{ text: 'University of Islamic Sciences, Karachi', callback_data: 'method_1' }],
-                [{ text: 'Islamic Society of North America', callback_data: 'method_2' }],
-                [{ text: 'Muslim World League', callback_data: 'method_3' }],
-                [{ text: 'Umm al-Qura, Makkah', callback_data: 'method_4' }],
-                [{ text: 'Egyptian General Authority of Survey', callback_data: 'method_5' }],
-                [{ text: 'Institute of Geophysics, University of Tehran', callback_data: 'method_7' }],
-                [{ text: 'Gulf Region', callback_data: 'method_8' }],
-                [{ text: 'Kuwait', callback_data: 'method_9' }],
-                [{ text: 'Qatar', callback_data: 'method_10' }],
-                [{ text: 'Singapore', callback_data: 'method_11' }],
-                [{ text: 'Turkey', callback_data: 'method_13' }]
-            ]
-        }
-    };
-};
-
-// Create language keyboard
-const getLanguageKeyboard = () => {
-    return {
-        reply_markup: {
-            inline_keyboard: [
-                [{ text: '🇹🇯 Тоҷикӣ', callback_data: 'lang_tj' }],
-                [{ text: '🇷🇺 Русский', callback_data: 'lang_ru' }],
-                [{ text: '🇺🇿 Ўзбекча', callback_data: 'lang_uz' }],
-                [{ text: '🇬🇧 English', callback_data: 'lang_en' }]
-            ]
-        }
-    };
-};
-
-// Function to format prayer times nicely
+// Function to format prayer times
 const formatPrayerTimes = (prayerData, city, country, nextPrayer = null) => {
     const { timings, date } = prayerData;
 
@@ -312,50 +390,6 @@ const setupNotifications = async (chatId, city, country, prayerList) => {
     }
 };
 
-// Function to find Qibla direction
-const getQiblaDirection = async (city, country) => {
-    try {
-        const url = `https://api.aladhan.com/v1/qibla/${encodeURIComponent(city)}/${encodeURIComponent(country)}`;
-        const response = await fetch(url);
-        const data = await response.json();
-
-        if (data.code === 200) {
-            return {
-                direction: data.data.direction,
-                latitude: data.data.latitude,
-                longitude: data.data.longitude
-            };
-        } else {
-            console.error("API Error:", data);
-            return null;
-        }
-    } catch (error) {
-        console.error("Error fetching qibla direction:", error);
-        return null;
-    }
-};
-
-// New function to handle language-specific responses
-const getLocalizedText = (key, lang = 'tj') => {
-    const localizations = {
-        'welcome': {
-            'tj': 'Ассалому алайкум',
-            'ru': 'Ассаляму алейкум',
-            'uz': 'Assalomu alaykum',
-            'en': 'Assalamu alaikum'
-        },
-        'prayer_times': {
-            'tj': 'Вақти намоз',
-            'ru': 'Время намаза',
-            'uz': 'Namoz vaqti',
-            'en': 'Prayer times'
-        },
-        // Add more phrases as needed
-    };
-
-    return (localizations[key] && localizations[key][lang]) || localizations[key]['tj'];
-};
-
 // Function to format date according to Hijri calendar
 const getHijriDate = async (date = new Date()) => {
     try {
@@ -364,8 +398,8 @@ const getHijriDate = async (date = new Date()) => {
         const year = date.getFullYear();
 
         const url = `https://api.aladhan.com/v1/gToH?date=${day}-${month}-${year}`;
-        const response = await fetch(url);
-        const data = await response.json();
+        const response = await axios.get(url);
+        const data = response.data;
 
         if (data.code === 200) {
             return {
@@ -628,7 +662,7 @@ bot.onText(/🧭 Самти қибла/, async (msg) => {
             `_Барои ёфтани самти дақиқ, шумо метавонед аз қомпас истифода баред ва ба самти ${Math.round(qiblaData.direction)}° нигоҳ кунед._`;
 
         // Create a compass image URL showing direction
-        const compassUrl = `https://qiblafinder.withgoogle.com/intl/en/offline/index.html?lat=${qiblaData.latitude}&lng=${qiblaData.longitude}`;
+        const compassUrl = `https://qiblafinder.withgoogle.com/intl/ru/finder/ar`;
 
         bot.sendMessage(chatId, message, {
             parse_mode: 'Markdown',
@@ -665,8 +699,8 @@ bot.onText(/📅 Тақвими моҳи ҷорӣ/, async (msg) => {
         const year = date.getFullYear();
 
         const url = `https://api.aladhan.com/v1/calendarByCity?city=${encodeURIComponent(city)}&country=${encodeURIComponent(country)}&method=${method}&month=${month}&year=${year}`;
-        const response = await fetch(url);
-        const data = await response.json();
+        const response = await axios.get(url);
+        const data = response.data;
 
         // Delete loading message
         bot.deleteMessage(chatId, loadingMsg.message_id).catch(err => console.error("Could not delete message:", err));
