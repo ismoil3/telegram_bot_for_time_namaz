@@ -44,21 +44,43 @@ const getMainMenuKeyboard = () => {
     };
 };
 
-// Function to generate the admin panel keyboard
+// Function to generate the admin panel keyboard// Function to generate the admin panel keyboard
 const getAdminPanelKeyboard = () => {
     return {
         reply_markup: {
             keyboard: [
-                ['/reklama'],
-                ['/editcommand'],
-                ['/deletecommand'],
-                ['↩️ Бозгашт ба меню']
+                ['/reklama'], // Button to send advertisements
+                ['/editcommand'], // Button to edit commands
+                ['/deletecommand'], // Button to delete commands
+                ['↩️ Бозгашт ба меню'] // Button to return to the main menu
             ],
-            resize_keyboard: true,
-            one_time_keyboard: true
+            resize_keyboard: true, // Resize the keyboard to fit the screen
+            one_time_keyboard: true // Hide the keyboard after one use
         }
     };
 };
+
+// Command to open the admin panel
+bot.onText(/\/admin/, (msg) => {
+    const chatId = msg.chat.id;
+
+    // Check if the user is an admin
+    if (chatId !== ADMIN_CHAT_ID) {
+        bot.sendMessage(chatId, "❌ Шумо иҷозати ин амалро надоред.");
+        return;
+    }
+
+    // Send the admin panel keyboard
+    bot.sendMessage(chatId, "Админ панел:", getAdminPanelKeyboard());
+});
+
+// Handle the "Return to Main Menu" button
+bot.onText(/↩️ Бозгашт ба меню/, (msg) => {
+    const chatId = msg.chat.id;
+
+    // Send the main menu keyboard
+    bot.sendMessage(chatId, "Ба менюи асосӣ баргаштем.", getMainMenuKeyboard());
+});
 
 // Function to generate the location keyboard
 const getLocationKeyboard = () => {
@@ -81,10 +103,7 @@ const getSettingsKeyboard = () => {
             keyboard: [
                 ['🌙 Тағйири методи ҳисобкунӣ'],
                 ['🔤 Тағйири забон'],
-                ['↩️ Бозгашт ба меню'],
-                ['reklama'],
-                ['editcommand'],
-                ['deletecommand']
+                ['↩️ Бозгашт ба меню']
             ],
             resize_keyboard: true,
             one_time_keyboard: true
