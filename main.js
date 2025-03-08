@@ -203,9 +203,57 @@ const getQiblaDirection = async (city, country) => {
     }
 };
 
-// Function to format prayer times
+// Function to determine next prayer
+const getNextPrayer = (timings) => {
+    const now = new Date();
+    const prayers = [
+        { name: 'Фаҷр', time: timings.Fajr.split(' ')[0] },
+        { name: 'Тулӯъ', time: timings.Sunrise.split(' ')[0] },
+        { name: 'Зуҳр', time: timings.Dhuhr.split(' ')[0] },
+        { name: 'Аср', time: timings.Asr.split(' ')[0] },
+        { name: 'Мағриб', time: timings.Maghrib.split(' ')[0] },
+        { name: 'Ишо', time: timings.Isha.split(' ')[0] }
+    ];
+
+    // Convert today's prayer times to Date objects
+    prayers.forEach(prayer => {
+        const [hours, minutes] = prayer.time.split(':').map(Number);
+        const prayerTime = new Date(now);
+        prayerTime.setHours(hours, minutes, 0, 0); // Setting hours, minutes, seconds and milliseconds
+        prayer.dateTime = prayerTime;
+    });
+
+    // Find next prayer for today
+    const nextPrayerToday = prayers.find(prayer => prayer.dateTime > now);
+
+    if (nextPrayerToday) {
+        // Calculate remaining time for next prayer today
+        const diff = nextPrayerToday.dateTime - now;
+        const hoursRemaining = Math.floor(diff / (1000 * 60 * 60));
+        const minutesRemaining = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        nextPrayerToday.remaining = `${hoursRemaining}ч ${minutesRemaining}д`;
+        return nextPrayerToday;
+    } else {
+        // All prayers for today have passed, calculate Fajr for tomorrow
+        const tomorrow = new Date(now);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        // Set Fajr time for tomorrow
+        const [fajrHours, fajrMinutes] = prayers[0].time.split(':').map(Number);
+        tomorrow.setHours(fajrHours, fajrMinutes, 0, 0);
+        const diff = tomorrow - now;
+        const hoursRemaining = Math.floor(diff / (1000 * 60 * 60));
+        const minutesRemaining = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        return {
+            name: 'Фаҷр (фардо)',
+            time: prayers[0].time,
+            remaining: `${hoursRemaining}ч ${minutesRemaining}д`
+        };
+    }
+};
+
+// Function to format prayer times message
 const formatPrayerTimes = (prayerData, city, country, nextPrayer = null) => {
-    const { timings, date } = prayerData;
+    const { timings, date, meta } = prayerData;
 
     // Format times to remove timezone information
     const formatTime = (time) => time.split(' ')[0];
@@ -219,50 +267,17 @@ const formatPrayerTimes = (prayerData, city, country, nextPrayer = null) => {
         `*🌃 Ишо:* \`${formatTime(timings.Isha)}\`\n`;
 
     // Add next prayer info if available
-    if (nextPrayer) {
+    if (nextPrayer && nextPrayer.name && nextPrayer.time && nextPrayer.remaining) {
         message += `\n*⏳ Намози оянда:* \`${nextPrayer.name}\` дар \`${nextPrayer.time}\` (${nextPrayer.remaining})\n`;
     }
 
-    message += `\n_Методи ҳисобкунӣ: ${prayerData.meta.method.name}_`;
+    message += `\n_Методи ҳисобкунӣ: ${meta.method.name}_`;
 
     return message;
 };
 
-// Function to determine next prayer
-const getNextPrayer = (timings) => {
-    const now = new Date();
-    const prayers = [
-        { name: 'Фаҷр', time: timings.Fajr.split(' ')[0] },
-        { name: 'Тулӯъ', time: timings.Sunrise.split(' ')[0] },
-        { name: 'Зуҳр', time: timings.Dhuhr.split(' ')[0] },
-        { name: 'Аср', time: timings.Asr.split(' ')[0] },
-        { name: 'Мағриб', time: timings.Maghrib.split(' ')[0] },
-        { name: 'Ишо', time: timings.Isha.split(' ')[0] }
-    ];
 
-    // Convert prayer times to Date objects
-    prayers.forEach(prayer => {
-        const [hours, minutes] = prayer.time.split(':').map(Number);
-        const prayerTime = new Date();
-        prayerTime.setHours(hours, minutes, 0);
-        prayer.dateTime = prayerTime;
-    });
 
-    // Find next prayer
-    const nextPrayer = prayers.find(prayer => prayer.dateTime > now);
-
-    if (nextPrayer) {
-        // Calculate remaining time
-        const diff = nextPrayer.dateTime - now;
-        const hours = Math.floor(diff / (1000 * 60 * 60));
-        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-        nextPrayer.remaining = `${hours}ч ${minutes}д`;
-        return nextPrayer;
-    } else {
-        // All prayers passed for today, next is Fajr tomorrow
-        return { name: 'Фаҷр (фардо)', time: prayers[0].time, remaining: 'фардо' };
-    }
-};
 
 // Setup prayer notifications
 const setupNotifications = async (chatId, city, country, prayerList) => {
