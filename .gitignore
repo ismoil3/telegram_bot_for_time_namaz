@@ -18,3 +18,4 @@ yarn-error.log
 # IDE or Editor specific files
 .vscode/
 .idea/
+.vercel

@@ -9,10 +9,7 @@
     "routes": [
         {
             "src": "/(.*)",
-            "dest": "/main.js"
+            "dest": "main.js"
         }
-    ],
-    "buildCommand": "npm run build",
-    "installCommand": "npm install",
-    "outputDirectory": "."
+    ]
 }
